@@ -1,0 +1,17 @@
+@import "tailwindcss";
+
+/* Tailwind preflight resets margins etc. Our design tokens live in tokens.css. */
+
+body {
+  background: var(--ink);
+  color: var(--paper);
+  font-family: var(--font-geist-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+button { background: transparent; border: 0; padding: 0; cursor: pointer; font: inherit; color: inherit; }
+a { color: inherit; text-decoration: none; }
+img, svg { display: block; max-width: 100%; }
+input, select, textarea { font: inherit; color: inherit; }

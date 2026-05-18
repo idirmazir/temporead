@@ -1,0 +1,177 @@
+/* TempoRead — design tokens (Noir palette default)
+   Five colours, no more. To swap palettes, change the five hex values
+   below and recompute the alpha helpers. Other palettes (Ink, Oxblood,
+   Forest, Sun) are kept as commented blocks at the bottom. */
+
+:root {
+  /* ─── Five locked tokens ─────────────────────────────────────────── */
+  --ink:    #0E0E10;
+  --paper:  #F5F2EC;
+  --signal: #E5202D;
+  --bone:   #8A8A90;
+  --shadow: #050507;
+
+  /* ─── Alpha helpers (computed from the five above) ───────────────── */
+  --bone-10:   rgba(138, 138, 144, 0.10);
+  --bone-15:   rgba(138, 138, 144, 0.15);
+  --bone-20:   rgba(138, 138, 144, 0.20);
+  --bone-30:   rgba(138, 138, 144, 0.30);
+  --bone-40:   rgba(138, 138, 144, 0.40);
+  --bone-60:   rgba(138, 138, 144, 0.60);
+  --ink-30:    rgba(14, 14, 16, 0.30);
+  --ink-60:    rgba(14, 14, 16, 0.60);
+  --signal-20: rgba(229, 32, 45, 0.20);
+  --signal-40: rgba(229, 32, 45, 0.40);
+
+  /* ─── Type — Geist only ──────────────────────────────────────────── */
+  --font-sans: var(--font-geist-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+
+  /* ─── Spacing — 8px baseline ─────────────────────────────────────── */
+  --s-1: 8px;
+  --s-2: 16px;
+  --s-3: 24px;
+  --s-4: 32px;
+  --s-5: 48px;
+  --s-6: 64px;
+  --s-7: 96px;
+  --s-8: 128px;
+
+  /* ─── Layout ─────────────────────────────────────────────────────── */
+  --max-marketing: 1200px;
+  --max-app: 1080px;
+  --gutter: 32px;
+
+  /* ─── Motion ─────────────────────────────────────────────────────── */
+  --ease: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/* Grid overlay motif — the only decoration allowed. */
+.tr-grid {
+  background-image:
+    linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+.tr-grid-quiet {
+  background-image:
+    linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+/* ─── Type scale ──────────────────────────────────────────────────── */
+.h1 {
+  font-size: clamp(48px, 6vw, 84px);
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+  margin: 0;
+}
+.h2 {
+  font-size: clamp(32px, 4vw, 52px);
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  line-height: 1.15;
+  margin: 0;
+}
+.h3 {
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+  margin: 0;
+}
+.kicker {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  margin: 0;
+}
+.body-lg {
+  font-size: 18px;
+  font-weight: 400;
+  line-height: 1.5;
+}
+.meta { font-size: 13px; font-weight: 500; }
+
+/* ─── Wordmark ────────────────────────────────────────────────────── */
+.wordmark {
+  font-family: var(--font-sans);
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: baseline;
+}
+.wordmark .tempo { font-weight: 300; color: var(--paper); }
+.wordmark .read  { font-weight: 600; color: var(--signal); }
+.wordmark.on-paper .tempo { color: var(--ink); }
+
+/* ─── Buttons ─────────────────────────────────────────────────────── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  border-radius: 0;
+  padding: 14px 22px;
+  transition: transform 200ms var(--ease), background 200ms var(--ease),
+              color 200ms var(--ease), border-color 200ms var(--ease);
+  white-space: nowrap;
+}
+.btn:hover { transform: translateY(-1px); }
+.btn-primary { background: var(--signal); color: var(--paper); }
+.btn-secondary { background: transparent; color: var(--paper); border: 1px solid var(--bone-30); }
+.btn-secondary:hover { border-color: var(--bone); }
+.btn-ghost { background: transparent; color: var(--paper); padding: 14px 4px; position: relative; }
+.btn-ghost::after {
+  content: "";
+  position: absolute;
+  left: 4px; right: 4px; bottom: 10px;
+  height: 1px;
+  background: var(--signal);
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform 200ms var(--ease);
+}
+.btn-ghost:hover::after { transform: scaleX(1); }
+.btn-sm { padding: 10px 16px; font-size: 13px; }
+.btn-lg { padding: 18px 28px; font-size: 15px; }
+
+/* ─── Container utilities ─────────────────────────────────────────── */
+.container       { width: 100%; max-width: var(--max-marketing); margin: 0 auto; padding: 0 var(--gutter); }
+.container-app   { width: 100%; max-width: var(--max-app);       margin: 0 auto; padding: 0 var(--gutter); }
+@media (max-width: 768px) { :root { --gutter: 20px; } }
+@media (max-width: 480px) { :root { --gutter: 16px; } }
+
+/* ─── Focus ───────────────────────────────────────────────────────── */
+:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
+
+/* ─── Reduced motion ──────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    transition-duration: 0ms !important;
+    animation-duration: 0ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
+/* ────────────────────────────────────────────────────────────────────
+   Alternative palettes — uncomment one block to swap the whole theme.
+   Each block must replace the five values + alpha helpers above.
+   ────────────────────────────────────────────────────────────────────
+
+   INK (original brief):
+     --ink #0B1F3A  --paper #F4F1EA  --signal #FF6B35  --bone #A8B4C8  --shadow #06132A
+
+   OXBLOOD:
+     --ink #2A1418  --paper #F0E9D8  --signal #E5A02F  --bone #9F8580  --shadow #1A0A0E
+
+   FOREST:
+     --ink #11261E  --paper #F2EFE2  --signal #C8FF3C  --bone #94A89B  --shadow #0A1814
+
+   SUN:
+     --ink #181613  --paper #F5F0E5  --signal #FFAA1F  --bone #9A948B  --shadow #0E0C09
+*/
