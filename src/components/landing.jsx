@@ -538,24 +538,42 @@ function Footer() {
 
 /* ─── Auth modal (Supabase email + password) ───────────────────────── */
 export function AuthModal({ open, onClose, onAuth, supabase, defaultMode = 'signin' }) {
-  const [mode, setMode] = useState(defaultMode)
+  const [mode, setMode] = useState(defaultMode) // 'signin' | 'signup' | 'forgot'
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [err, setErr] = useState('')
+  const [info, setInfo] = useState('')
 
   useEffect(() => {
-    if (open) { setMode(defaultMode); setEmail(''); setPassword(''); setLoading(false); setErr('') }
+    if (open) { setMode(defaultMode); setEmail(''); setPassword(''); setLoading(false); setErr(''); setInfo('') }
   }, [open, defaultMode])
 
   if (!open) return null
   const isSignup = mode === 'signup'
-  const canSubmit = email.trim().includes('@') && password.length >= 6 && !loading
+  const isForgot = mode === 'forgot'
+  const isSignin = mode === 'signin'
+
+  const emailValid = email.trim().includes('@')
+  const passwordValid = password.length >= 6
+  const canSubmit = !loading && emailValid && (isForgot ? true : passwordValid)
 
   const submit = async (e) => {
     e.preventDefault()
     if (!canSubmit || !supabase) return
-    setLoading(true); setErr('')
+    setLoading(true); setErr(''); setInfo('')
+
+    if (isForgot) {
+      const redirectTo = typeof window !== 'undefined'
+        ? `${window.location.origin}/auth/reset`
+        : undefined
+      const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo })
+      setLoading(false)
+      if (error) { setErr(error.message); return }
+      setInfo('Check your inbox for a reset link.')
+      return
+    }
+
     const { data, error } = isSignup
       ? await supabase.auth.signUp({ email: email.trim(), password })
       : await supabase.auth.signInWithPassword({ email: email.trim(), password })
@@ -563,6 +581,19 @@ export function AuthModal({ open, onClose, onAuth, supabase, defaultMode = 'sign
     if (error) { setErr(error.message); return }
     onAuth && onAuth({ user: data?.user || null, mode })
   }
+
+  const title = isSignup ? 'Start reading faster.' :
+                isForgot ? 'Reset your password' :
+                'Sign in to TempoRead'
+  const eyebrow = isSignup ? 'Create account' :
+                  isForgot ? 'Forgot password' :
+                  'Welcome back'
+  const submitLabel = isSignup ? 'Create account' :
+                      isForgot ? 'Email me a link' :
+                      'Sign in'
+  const submittingLabel = isSignup ? 'Creating\u2026' :
+                          isForgot ? 'Sending\u2026' :
+                          'Signing in\u2026'
 
   return (
     <div onClick={onClose} style={{
@@ -579,48 +610,63 @@ export function AuthModal({ open, onClose, onAuth, supabase, defaultMode = 'sign
           position: 'absolute', top: 16, right: 16, color: 'var(--ink-60)', padding: 8,
         }}><Icon name="x" size={16}></Icon></button>
 
-        <Kicker color="var(--ink-60)" style={{ marginBottom: 12 }}>{isSignup ? 'Create account' : 'Welcome back'}</Kicker>
+        <Kicker color="var(--ink-60)" style={{ marginBottom: 12 }}>{eyebrow}</Kicker>
         <div style={{ fontSize: 28, fontWeight: 600, letterSpacing: '-0.02em', lineHeight: 1.15, marginBottom: 24 }}>
-          {isSignup ? 'Start reading faster.' : 'Sign in to TempoRead'}
+          {title}
         </div>
 
         <div style={{ marginBottom: 16 }}>
           <label style={{ display: 'block', fontSize: 11, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-60)', fontWeight: 500, marginBottom: 6 }}>Email</label>
           <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} autoFocus autoComplete="email"
             placeholder="you@uni.edu.au"
-            style={{ width: '100%', background: 'transparent', color: 'var(--ink)',
+            style={{
+              width: '100%', background: 'transparent', color: 'var(--ink)',
               border: 'none', borderBottom: '1px solid var(--ink-30)', padding: '10px 0',
               fontSize: 16, outline: 'none', fontFamily: 'inherit',
             }}></input>
         </div>
 
-        <div>
-          <label style={{ display: 'block', fontSize: 11, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-60)', fontWeight: 500, marginBottom: 6 }}>Password</label>
-          <input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} autoComplete={isSignup ? 'new-password' : 'current-password'}
-            placeholder={isSignup ? 'At least 6 characters' : '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022'}
-            style={{ width: '100%', background: 'transparent', color: 'var(--ink)',
-              border: 'none', borderBottom: '1px solid var(--ink-30)', padding: '10px 0',
-              fontSize: 16, outline: 'none', fontFamily: 'inherit',
-            }}></input>
-        </div>
+        {!isForgot && (
+          <div>
+            <label style={{ display: 'block', fontSize: 11, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-60)', fontWeight: 500, marginBottom: 6 }}>Password</label>
+            <input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} autoComplete={isSignup ? 'new-password' : 'current-password'}
+              placeholder={isSignup ? 'At least 6 characters' : '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022'}
+              style={{
+                width: '100%', background: 'transparent', color: 'var(--ink)',
+                border: 'none', borderBottom: '1px solid var(--ink-30)', padding: '10px 0',
+                fontSize: 16, outline: 'none', fontFamily: 'inherit',
+              }}></input>
+          </div>
+        )}
 
-        {err && <div style={{ marginTop: 12, fontSize: 13, color: 'var(--signal)', fontWeight: 500 }}>{err}</div>}
+        {err  && <div style={{ marginTop: 12, fontSize: 13, color: 'var(--signal)', fontWeight: 500 }}>{err}</div>}
+        {info && <div style={{ marginTop: 12, fontSize: 13, color: 'var(--ink-60)', fontWeight: 500 }}>{info}</div>}
 
         <button type="submit" disabled={!canSubmit} className="btn btn-lg" style={{
           marginTop: 24, width: '100%', justifyContent: 'center',
           background: canSubmit ? 'var(--ink)' : 'rgba(14,14,16,0.25)',
           color: 'var(--paper)', cursor: canSubmit ? 'pointer' : 'not-allowed',
         }}>
-          {loading ? (isSignup ? 'Creating\u2026' : 'Signing in\u2026') : (isSignup ? 'Create account' : 'Sign in')}
+          {loading ? submittingLabel : submitLabel}
           <Icon name="arrowRight" size={14}></Icon>
         </button>
 
         <div style={{ marginTop: 20, fontSize: 13, color: 'var(--ink-60)', textAlign: 'center' }}>
-          {isSignup ? 'Already have an account? ' : 'New to TempoRead? '}
-          <button type="button" onClick={() => setMode(isSignup ? 'signin' : 'signup')} style={{
-            color: 'var(--signal)', fontWeight: 500, fontSize: 'inherit',
-          }}>{isSignup ? 'Sign in' : 'Create one'}</button>
+          {isForgot
+            ? <>Remembered it? <button type="button" onClick={() => setMode('signin')} style={{ color: 'var(--signal)', fontWeight: 500, fontSize: 'inherit' }}>Sign in</button></>
+            : <>
+                {isSignup ? 'Already have an account? ' : 'New to TempoRead? '}
+                <button type="button" onClick={() => setMode(isSignup ? 'signin' : 'signup')} style={{ color: 'var(--signal)', fontWeight: 500, fontSize: 'inherit' }}>{isSignup ? 'Sign in' : 'Create one'}</button>
+              </>}
         </div>
+
+        {isSignin && (
+          <div style={{ marginTop: 8, fontSize: 12, color: 'var(--ink-60)', textAlign: 'center' }}>
+            <button type="button" onClick={() => setMode('forgot')} style={{ color: 'var(--ink-60)', fontSize: 'inherit', textDecoration: 'underline', textUnderlineOffset: 2 }}>
+              Forgot password?
+            </button>
+          </div>
+        )}
       </form>
       <style>{`
         @keyframes modalFade  { from { opacity: 0; } to { opacity: 1; } }

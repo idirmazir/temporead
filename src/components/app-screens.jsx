@@ -1,13 +1,13 @@
 'use client'
 
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { Icon, Kicker, Wordmark, RSVPWord, ProgressBar, Slider, DocSpine } from './rsvp'
 
 /* ─── App top bar ──────────────────────────────────────────────────── */
 export function AppTopBar({
   docTitle, onHome, onLibrary, onSettings,
   user, isPro, wordsUsed = 0, wordLimit = 5000,
-  onUpgrade, onPortal, onSignOut, onSignIn,
+  onUpgrade, onPortal, onAnalytics, onSignOut, onSignIn,
   inReader,
 }) {
   const [acctOpen, setAcctOpen] = useState(false)
@@ -53,6 +53,7 @@ export function AppTopBar({
               wordLimit={wordLimit}
               onUpgrade={() => { setAcctOpen(false); onUpgrade && onUpgrade() }}
               onPortal={() => { setAcctOpen(false); onPortal && onPortal() }}
+              onAnalytics={() => { setAcctOpen(false); onAnalytics && onAnalytics() }}
               onSettings={() => { setAcctOpen(false); onSettings && onSettings() }}
               onSignOut={() => { setAcctOpen(false); onSignOut && onSignOut() }}
               onSignIn={() => { setAcctOpen(false); onSignIn && onSignIn() }}
@@ -83,7 +84,7 @@ function IconButton({ icon, onClick, label, active }) {
   )
 }
 
-function AccountPopover({ user, isPro, wordsUsed, wordLimit, onUpgrade, onPortal, onSettings, onSignOut, onSignIn }) {
+function AccountPopover({ user, isPro, wordsUsed, wordLimit, onUpgrade, onPortal, onSettings, onAnalytics, onSignOut, onSignIn }) {
   if (!user) {
     return (
       <div style={popoverStyle}>
@@ -151,7 +152,10 @@ function AccountPopover({ user, isPro, wordsUsed, wordLimit, onUpgrade, onPortal
             <Icon name="arrowRight" size={14}></Icon>
           </button>
         ) : (
-          <PopoverItem icon="link" label="Manage subscription" onClick={onPortal}></PopoverItem>
+          <>
+            <PopoverItem icon="trendingUp" label="Reading analytics" onClick={onAnalytics}></PopoverItem>
+            <PopoverItem icon="link" label="Manage subscription" onClick={onPortal}></PopoverItem>
+          </>
         )}
         <PopoverItem icon="settings" label="All settings" onClick={onSettings}></PopoverItem>
         <div style={{ height: 1, background: 'var(--ink-30)', margin: '8px 0' }}></div>
@@ -218,7 +222,7 @@ function formatTime(mins) {
   return `${m}:${String(s).padStart(2, '0')}`
 }
 
-export function Reader({ doc, theme = 'ink', font = 'geist', fontScale = 'm', onRequestRecall, onPositionTick }) {
+export function Reader({ doc, theme = 'ink', font = 'geist', fontScale = 'm', startWpm = 300, maxWpm = 700, ramp = true, onRequestRecall, onPositionTick, onSessionEnd }) {
   const isPaper = theme === 'paper'
   const surface = isPaper ? 'var(--paper)' : 'var(--ink)'
   const signal = 'var(--signal)'
@@ -229,16 +233,70 @@ export function Reader({ doc, theme = 'ink', font = 'geist', fontScale = 'm', on
     ? '"OpenDyslexic", "OpenDyslexic 3", var(--font-sans)'
     : 'var(--font-sans)'
 
-  const [wpm, setWpm] = useState(300)
+  // wpm is what the user has manually dialled in. effectiveWpm is what we
+  // actually play at, which during the ramp-in lerps from startWpm to wpm
+  // over the first 60s. Once the ramp finishes (or if ramp is off), they
+  // are identical and the slider is the source of truth.
+  const [wpm, setWpm] = useState(maxWpm)
+  const [rampActive, setRampActive] = useState(!!ramp)
+  const sessionStartRef = useRef(null)
+  const RAMP_MS = 60_000
+
+  // Reset state when the document or prefs change
+  useEffect(() => {
+    setWpm(maxWpm)
+    setRampActive(!!ramp)
+    sessionStartRef.current = Date.now()
+  }, [doc.id, maxWpm, ramp])
+
   const [idx, setIdx] = useState(doc.position || 0)
   const [playing, setPlaying] = useState(true)
 
   const words = doc.words
 
+  // Track the session window. We emit a reading_sessions row when the user
+  // pauses long-form (>30s of inactivity), navigates away, or unmounts.
+  const sessionRef = useRef({ startIdx: doc.position || 0, lastIdx: doc.position || 0, startedAt: Date.now() })
+  useEffect(() => {
+    sessionRef.current = { startIdx: idx, lastIdx: idx, startedAt: Date.now() }
+    // On idx change, just update lastIdx.
+    return () => {
+      const s = sessionRef.current
+      const wordsRead = Math.max(0, s.lastIdx - s.startIdx)
+      const durationMs = Date.now() - s.startedAt
+      if (wordsRead >= 10 && onSessionEnd) {
+        onSessionEnd({ wordsRead, wpm, durationMs, documentId: doc.id })
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [doc.id])
+
+  useEffect(() => { sessionRef.current.lastIdx = idx }, [idx])
+  const effectiveWpm = useMemo(() => {
+    if (!rampActive) return wpm
+    const elapsed = Date.now() - (sessionStartRef.current || Date.now())
+    if (elapsed >= RAMP_MS) return wpm
+    const t = Math.max(0, Math.min(1, elapsed / RAMP_MS))
+    // Ease-out so the early ramp feels generous, then closes in on target
+    const eased = 1 - Math.pow(1 - t, 2)
+    return Math.round(startWpm + (wpm - startWpm) * eased)
+  }, [rampActive, wpm, startWpm, idx])  // idx in deps so it recomputes per word
+
+  // Once the ramp finishes, drop out of ramp mode permanently for this doc
+  useEffect(() => {
+    if (!rampActive) return
+    const t = setTimeout(() => setRampActive(false), RAMP_MS)
+    return () => clearTimeout(t)
+  }, [rampActive])
+
+  // If the user manually drags the slider during ramp-in, treat that as
+  // committing to that speed — exit the ramp immediately.
+  const setWpmManual = useCallback((v) => { setRampActive(false); setWpm(v) }, [])
+
   // Variable-delay tick — full stops and punctuation get a longer pause.
   useEffect(() => {
     if (!playing) return
-    const base = 60000 / wpm
+    const base = 60000 / effectiveWpm
     const cur = words[idx] || ''
     const last = cur.slice(-1)
     const delay =
@@ -250,12 +308,16 @@ export function Reader({ doc, theme = 'ink', font = 'geist', fontScale = 'm', on
       setIdx((i) => {
         const next = i + 1
         if (next >= words.length) return i
-        if (next > 0 && next % 1000 === 0 && onRequestRecall) onRequestRecall()
+        if (next > 0 && next % 1000 === 0 && onRequestRecall) {
+          // Pass the last passage so the caller can generate a real question.
+          const passage = words.slice(Math.max(0, next - 600), next).join(' ')
+          onRequestRecall(passage)
+        }
         return next
       })
     }, delay)
     return () => clearTimeout(t)
-  }, [playing, wpm, idx, words, onRequestRecall])
+  }, [playing, effectiveWpm, idx, words, onRequestRecall])
 
   // Periodically report position back so the page can persist to Supabase.
   useEffect(() => {
@@ -271,8 +333,8 @@ export function Reader({ doc, theme = 'ink', font = 'geist', fontScale = 'm', on
       if (e.code === 'Space')   { e.preventDefault(); setPlaying((p) => !p) }
       if (e.key === 'ArrowLeft')  setIdx((i) => Math.max(0, i - Math.round(wpm / 6)))
       if (e.key === 'ArrowRight') setIdx((i) => Math.min(words.length - 1, i + Math.round(wpm / 6)))
-      if (e.key === 'ArrowUp')   { e.preventDefault(); setWpm((w) => Math.min(1000, w + 25)) }
-      if (e.key === 'ArrowDown') { e.preventDefault(); setWpm((w) => Math.max(100,  w - 25)) }
+      if (e.key === 'ArrowUp')   { e.preventDefault(); setWpmManual(Math.min(1000, wpm + 25)) }
+      if (e.key === 'ArrowDown') { e.preventDefault(); setWpmManual(Math.max(100,  wpm - 25)) }
       if (e.key === 'r' || e.key === 'R') setIdx(0)
     }
     window.addEventListener('keydown', onKey)
@@ -281,7 +343,7 @@ export function Reader({ doc, theme = 'ink', font = 'geist', fontScale = 'm', on
 
   const word = words[idx] || ''
   const wordsRemaining = words.length - idx
-  const minsRemaining = Math.max(0, Math.round((wordsRemaining / wpm) * 10) / 10)
+  const minsRemaining = Math.max(0, Math.round((wordsRemaining / Math.max(effectiveWpm, 1)) * 10) / 10)
   const timeRemaining = formatTime(minsRemaining)
 
   return (
@@ -334,8 +396,12 @@ export function Reader({ doc, theme = 'ink', font = 'geist', fontScale = 'm', on
           </div>
 
           <div style={{ width: '100%', maxWidth: 480 }}>
-            <div className="kicker" style={{ color: isPaper ? 'var(--ink-60)' : 'var(--bone)', marginBottom: 8, textAlign: 'center' }}>{wpm} WPM</div>
-            <Slider value={wpm} min={100} max={1000} step={25} onChange={setWpm}></Slider>
+            <div className="kicker" style={{ color: isPaper ? 'var(--ink-60)' : 'var(--bone)', marginBottom: 8, textAlign: 'center' }}>
+              {rampActive
+                ? <>{effectiveWpm} WPM <span style={{ color: 'var(--signal)', marginLeft: 6 }}>&middot; ramping to {wpm}</span></>
+                : <>{wpm} WPM</>}
+            </div>
+            <Slider value={wpm} min={100} max={1000} step={25} onChange={setWpmManual}></Slider>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: isPaper ? 'var(--ink-60)' : 'var(--bone-60)', marginTop: 4 }}>
               <span>100</span><span>1000</span>
             </div>
@@ -368,13 +434,13 @@ function ShortcutHint({ k, label }) {
 }
 
 /* ─── Recall prompt overlay ────────────────────────────────────────── */
-export function RecallPrompt({ open, onDismiss }) {
-  const [countdown, setCountdown] = useState(12)
+export function RecallPrompt({ open, question, loading, onDismiss }) {
+  const [countdown, setCountdown] = useState(15)
   useEffect(() => {
-    if (!open) { setCountdown(12); return }
+    if (!open) { setCountdown(15); return }
     const t = setInterval(() => {
       setCountdown((c) => {
-        if (c <= 1) { onDismiss('timeout'); return 12 }
+        if (c <= 1) { onDismiss('timeout'); return 15 }
         return c - 1
       })
     }, 1000)
@@ -394,8 +460,10 @@ export function RecallPrompt({ open, onDismiss }) {
         animation: 'recallSlide 280ms var(--ease)',
       }}>
         <Kicker color="var(--ink-60)" style={{ marginBottom: 16 }}>Quick recall</Kicker>
-        <div style={{ fontSize: 22, fontWeight: 500, letterSpacing: '-0.01em', lineHeight: 1.4, maxWidth: 560, marginBottom: 32 }}>
-          What was the main argument of the last passage?
+        <div style={{ fontSize: 22, fontWeight: 500, letterSpacing: '-0.01em', lineHeight: 1.4, maxWidth: 620, marginBottom: 32, minHeight: 60 }}>
+          {loading ? (
+            <span style={{ opacity: 0.4 }}>Generating a question from the last passage&hellip;</span>
+          ) : (question || 'What was the main argument of the last passage?')}
         </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
           <RecallChip onClick={() => onDismiss('got')}>Got it &rarr; continue</RecallChip>

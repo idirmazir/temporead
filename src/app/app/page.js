@@ -84,6 +84,28 @@ export default function AppPage() {
 
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [recallOpen, setRecallOpen] = useState(false)
+  const [recallQuestion, setRecallQuestion] = useState('')
+  const [recallLoading, setRecallLoading] = useState(false)
+
+  const requestRecall = useCallback(async (passage) => {
+    if (!prefs.recall) return
+    setRecallOpen(true)
+    setRecallQuestion('')
+    setRecallLoading(true)
+    try {
+      const res = await fetch('/api/recall-question', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ passage }),
+      })
+      const data = await res.json()
+      setRecallQuestion(data.question || 'What was the main argument of the last passage?')
+    } catch (_) {
+      setRecallQuestion('What was the main argument of the last passage?')
+    } finally {
+      setRecallLoading(false)
+    }
+  }, [])
   const [toastOpen, setToastOpen] = useState(false)
   const [authOpen, setAuthOpen] = useState(false)
   const [authMode, setAuthMode] = useState('signin')
@@ -192,19 +214,41 @@ export default function AppPage() {
     if (!user) { setAuthMode('signup'); setAuthOpen(true); return }
     const { words, totalWords } = tokenize(text)
     if (!totalWords) { showFeedback('No readable text found.', 'error'); return }
-    if (!isPro && (wordsUsed + totalWords) > FREE_LIMIT) {
-      setToastOpen(true); return
+
+    // Server-side free-tier enforcement. The RPC also rolls the monthly
+    // bucket atomically. Pro users always pass.
+    if (!isPro) {
+      const { data: { session } } = await supabase.auth.getSession()
+      const token = session?.access_token
+      if (!token) { setAuthMode('signin'); setAuthOpen(true); return }
+      try {
+        const res = await fetch('/api/consume-words', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ wordsToAdd: totalWords }),
+        })
+        const meter = await res.json()
+        if (!res.ok || !meter.allowed) {
+          setToastOpen(true)
+          return
+        }
+        if (typeof meter.used === 'number') setWordsUsed(meter.used)
+      } catch (_) {
+        showFeedback('Could not check usage. Try again.', 'error')
+        return
+      }
     }
+
     const row = await persistDoc({ title, text, totalWords, kind })
     if (!row) return
     const newDoc = rowToDoc(row)
     setDocs((d) => [newDoc, ...d])
     setCurrentDocId(newDoc.id)
     setView('reader')
-    // Increment free-tier usage client-side; the live build can also call
-    // an RPC to atomically increment server-side.
-    if (!isPro) setWordsUsed((w) => w + totalWords)
-  }, [user, isPro, wordsUsed, persistDoc, showFeedback])
+  }, [user, isPro, supabase, persistDoc, showFeedback])
 
   const ingestFile = useCallback(async (file) => {
     if (!file) return
@@ -252,7 +296,16 @@ export default function AppPage() {
     showFeedback('Unsupported file type.', 'error')
   }, [isPro, addDoc, showFeedback])
 
-  /* ─── Reader position persistence ──────────────────────────────── */
+  const recordSession = useCallback(async ({ wordsRead, wpm: sessionWpm, durationMs, documentId }) => {
+    if (!user) return
+    await supabase.from('reading_sessions').insert({
+      user_id: user.id,
+      document_id: documentId || null,
+      words_read: wordsRead,
+      wpm: sessionWpm,
+      duration_ms: durationMs,
+    })
+  }, [user, supabase])
   const onPositionTick = useCallback((idx, total) => {
     if (!user || !currentDocId) return
     supabase.from('documents').update({
@@ -314,6 +367,7 @@ export default function AppPage() {
         wordLimit={FREE_LIMIT}
         onUpgrade={() => handleUpgrade('monthly')}
         onPortal={handlePortal}
+        onAnalytics={() => { window.location.href = '/app/analytics' }}
         onSignOut={handleSignOut}
         onSignIn={() => { setAuthMode('signin'); setAuthOpen(true) }}
         inReader={view === 'reader'}
@@ -339,8 +393,12 @@ export default function AppPage() {
           theme={prefs.theme}
           font={prefs.font}
           fontScale={prefs.fontSize}
-          onRequestRecall={() => prefs.recall && setRecallOpen(true)}
+          startWpm={prefs.startWpm}
+          maxWpm={prefs.maxWpm}
+          ramp={prefs.ramp}
+          onRequestRecall={requestRecall}
           onPositionTick={onPositionTick}
+          onSessionEnd={recordSession}
         ></Reader>
       )}
 
@@ -351,7 +409,12 @@ export default function AppPage() {
         setPrefs={setPrefs}
       ></SettingsDrawer>
 
-      <RecallPrompt open={recallOpen} onDismiss={() => setRecallOpen(false)}></RecallPrompt>
+      <RecallPrompt
+        open={recallOpen}
+        question={recallQuestion}
+        loading={recallLoading}
+        onDismiss={() => setRecallOpen(false)}
+      ></RecallPrompt>
 
       <UpgradeToast
         open={toastOpen}

@@ -225,6 +225,11 @@ STRIPE_SECRET_KEY=
 STRIPE_WEBHOOK_SECRET=
 STRIPE_PRICE_MONTHLY=
 STRIPE_PRICE_ANNUAL=
+
+# Anthropic (optional) — when set, /api/recall-question generates per-passage
+# recall questions with Claude Haiku. When unset, the route returns a curated
+# prompt rotation. Either way the recall feature works.
+ANTHROPIC_API_KEY=
 ```
 
 Also create `.env.local.example` with the same keys (no values) and commit
@@ -290,6 +295,7 @@ create table public.documents (
   user_id           uuid not null references auth.users(id) on delete cascade,
   title             text not null,
   content           text not null,
+  kind              text not null default 'T',      -- 'P' pdf, 'D' docx, 'U' url, 'T' text
   word_count        integer not null default 0,
   current_position  integer not null default 0,
   total_words       integer not null default 0,
